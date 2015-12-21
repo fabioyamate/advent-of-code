@@ -84,7 +84,35 @@ execute (Command a area) lights = L.foldl' update lights selection
     where update = flip $ Map.alter (action a)
           selection = areaLights area
 
+part1 :: Instructions -> Int
+part1 = lightsOn . L.foldl' (flip execute) Map.empty
+
+-- part2
+
+changeBrightness f brightness = if newBrightness < 0 then Just 0 else Just newBrightness
+    where newBrightness = f brightness
+
+increaseBy x n = n + x
+decreaseBy x n = n - x
+
+brightness TurnOn = changeBrightness (increaseBy 1)
+brightness TurnOff = changeBrightness (decreaseBy 1)
+brightness Toggle = changeBrightness (increaseBy 2)
+
+initBrightness :: Map.Map (Int, Int) Int
+initBrightness = Map.fromList [((x,y), 0) | x <- [0..999], y <- [0..999]]
+
+executeBrightness (Command a area) lights = L.foldl' update lights selection
+    where update = flip $ Map.update (brightness a)
+          selection = areaLights area
+
+totalBrightness :: Map.Map (Int, Int) Int -> Int
+totalBrightness = Map.foldl' (+) 0
+
+part2 :: Instructions -> Int
+part2 = totalBrightness . L.foldl' (flip executeBrightness) initBrightness
+
 main = do
     contents <- BS.getContents
     print $ case parseOnly parseInstructions contents of
-         Right instructions -> lightsOn $ L.foldl' (flip execute) Map.empty instructions
+         Right instructions -> part2 instructions

@@ -79,7 +79,22 @@ consume [] state = state
 consume xs state = consume xs' (sSize,bSize)
     where (_,sSize,bSize,xs') = parseSpecialChar xs state
 
+encode [] = []
+encode (x:xs) = if (x == '"' || x == '\\')
+              then '\\' : x : (encode xs)
+              else x : (encode xs)
+
+encodeString xs = "\"" ++ (encode xs) ++ "\""
+
+part1 strings = sSize - bSize
+    where (sSize,bSize) = foldl' (flip consume) (0,0) strings
+
+part2 strings = sSize' - sSize
+    where encodedStrings = map encodeString strings
+          (sSize,_) = foldl' (flip consume) (0,0) strings
+          (sSize',_) = foldl' (flip consume) (0,0) encodedStrings
+
 main = do
     contents <- getContents
-    (a,b) <- return . foldl' (flip consume) (0,0) . lines $ contents
-    print $ a - b
+    print $ part1 . lines $ contents
+    print $ part2 . lines $ contents

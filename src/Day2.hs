@@ -24,12 +24,28 @@ parseDimension = do
 parseDimensions :: Parser [Dimension]
 parseDimensions = many' $ parseDimension <* (endOfInput <|> endOfLine)
 
+combine2 :: [a] -> [[a]]
+combine2 [] = []
+combine2 (x:xs) = (combine' x xs) ++ (combine2 xs)
+    where combine' _ [] = []
+          combine' x (y:ys) = [x,y] : (combine' x ys)
+
 area :: Dimension -> Int
 area (Dimension l w h) = 2 * (sum faceAreas) + minimum faceAreas
   where faceAreas = [l*w, w*h, l*h]
+
+ribbon :: Dimension -> Int
+ribbon (Dimension l w h) = w*l*h + minimum facePerimeters
+     where facePerimeters = [2*(w+l), 2*(w+h), 2*(l+h)]
+
+part1 :: [Dimension] -> Int
+part1 = sum . map area
+
+part2 :: [Dimension] -> Int
+part2 = sum . map ribbon
 
 main :: IO ()
 main = do
      contents <- BS.getContents
      print $ case parseOnly parseDimensions contents of
-                  Right dimensions -> sum $ map area dimensions
+                  Right dimensions -> (part1 dimensions, part2 dimensions)

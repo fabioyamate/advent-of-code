@@ -23,6 +23,7 @@ library
                      , base16-bytestring
                      , bytestring
                      , aeson
+                     , matrix
   default-language:    Haskell2010
 
 executable advent-of-code-exe

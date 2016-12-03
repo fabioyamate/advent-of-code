@@ -24,6 +24,7 @@ library
                      , bytestring
                      , aeson
                      , matrix
+                     , arithmoi
   default-language:    Haskell2010
 
 executable advent-of-code-exe

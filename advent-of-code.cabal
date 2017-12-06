@@ -25,7 +25,9 @@ library
                      , aeson
                      , matrix
                      , arithmoi
+                     , parsec
                      , text
+                     , lens
   default-language:    Haskell2010
 
 executable advent-of-code-exe

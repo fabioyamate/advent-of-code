@@ -3,9 +3,7 @@
 module AoE.Y2017.D02 where
 
 import Control.Arrow ((&&&), (>>>), arr)
-
--- quick way to get primes
-import Math.NumberTheory.Primes.Sieve (primes)
+import Data.List (sort)
 
 diff :: [Integer] -> Integer
 diff = maximum &&& minimum >>> uncurry (-)
@@ -18,10 +16,18 @@ divisibleBy n x = n `mod` x == 0
 divisibleBetween xs = all (`divisibleBy` m) xs
     where m = minimum xs
 
+
 diff2 :: [Integer] -> Integer
-diff2 xs = diff' $ head $ filter divisibleBetween ys 
-   where diff' = maximum &&& minimum >>> uncurry div
-         ys = [divisibles | p <- primes, let divisibles = filter (`divisibleBy` p) xs, length divisibles == 2]
+-- rationale, there will be list of numbers
+-- if there are 2 numbers divisible, if we
+-- test from minimum to maximum number we will
+-- quickly find the first disible number
+--
+-- permutation would be another option, which is close
+-- to what is done here
+diff2 = head . g . sort
+    where g [] = []
+          g (x:ys) = [diff | y <- ys, let (diff, m) = y `divMod` x, m == 0] ++ (g ys)
 
 solve2 :: [String] -> Integer
 solve2 = sum . map diff2 . parse

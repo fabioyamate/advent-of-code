@@ -27,6 +27,7 @@ library
                      , arithmoi
                      , parsec
                      , text
+                     , vector
                      , lens
   default-language:    Haskell2010
 

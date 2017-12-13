@@ -28,6 +28,7 @@ library
                      , parsec
                      , text
                      , vector
+                     , heap
                      , lens
   default-language:    Haskell2010
 

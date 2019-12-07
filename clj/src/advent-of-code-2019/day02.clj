@@ -22,6 +22,8 @@
                (f (read-value memory (+ pointer 1))
                   (read-value memory (+ pointer 2)))))
 
+;; TODO apply state-monad pattern here instead of imperative code
+
 (defn run
   [program]
   (loop [pointer 0

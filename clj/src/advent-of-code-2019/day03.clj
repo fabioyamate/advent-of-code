@@ -23,15 +23,15 @@
 
 (defn wire
   [position path]
-  (loop [grid #{}
+  (loop [position position
          path path
-         position position]
+         wire-points []]
     (if (empty? path)
-      grid
+      wire-points
       (let [points (points position (first path))]
-        (recur (clojure.set/union grid (set points))
+        (recur (last points)
                (rest path)
-               (last points))))))
+               (into wire-points points))))))
 
 (defn parse-move
   [move-str]
@@ -49,14 +49,20 @@
       (clojure.string/split #",")
       (->> (map parse-move))))
 
+(defn wires-intersection
+  [wires]
+  (->> (map set wires)
+       (apply clojure.set/intersection)))
+
 (defn min-distance-1
   [paths]
-  (->> paths
-       (map read-path)
-       (map (partial wire [0 0]))
-       (apply clojure.set/intersection)
-       (map (partial manhattan-distance [0 0]))
-       (apply min)))
+  (let [center-position [0 0]]
+    (->> paths
+         (map read-path)
+         (map (partial wire center-position))
+         wires-intersection
+         (map (partial manhattan-distance center-position))
+         (apply min))))
 
 (deftest level-1
   (is (= 6 (min-distance-1 ["R8,U5,L5,D3"
@@ -75,45 +81,41 @@
 (solve-1)
 ;; => 446
 
-(defn seek-path
+(defn wire-intersection->steps
   [from to path]
-  (loop [distance 0
-         path path
-         position from]
-    (if (empty? path)
-      distance
-      (let [points (points position (first path))]
-        (if (some #{to} points)
-          (+ distance (manhattan-distance position to))
-          (recur (+ distance (manhattan-distance position (last points)))
-                 (rest path)
-                 (last points)))))))
+  (reduce
+   (fn [distance point]
+     (if (= point to)
+       (reduced (inc distance))
+       (inc distance)))
+   0
+   (wire from path)))
 
-(defn best-something
+(defn fewest-combined-steps-to-intersection
   [paths-str]
   (let [paths (map read-path paths-str)]
     (apply min
            (for [point (->> (map (partial wire [0 0]) paths)
-                            (apply clojure.set/intersection))]
-             (->> (map (partial seek-path [0 0] point) paths)
+                            wires-intersection)]
+             (->> (map (partial wire-intersection->steps [0 0] point) paths)
                   (apply +))))))
 
 (defn solve-2
   []
   (with-open [rdr (io/reader (io/resource "advent-of-code-2019/day03.in"))]
-    (best-something (line-seq rdr))))
+    (fewest-combined-steps-to-intersection (line-seq rdr))))
 
 (solve-2)
 ;; => 9006
 
 (deftest level-2
-  (is (= 20 (seek-path [0 0] [3 3] (read-path "R8,U5,L5,D3"))))
-  (is (= 15 (seek-path [0 0] [6 5] (read-path "R8,U5,L5,D3"))))
+  (is (= 20 (wire-intersection->steps [0 0] [3 3] (read-path "R8,U5,L5,D3"))))
+  (is (= 15 (wire-intersection->steps [0 0] [6 5] (read-path "R8,U5,L5,D3"))))
 
-  (is (= 30 (best-something ["R8,U5,L5,D3"
-                             "U7,R6,D4,L4"])))
-  (is (= 610 (best-something ["R75,D30,R83,U83,L12,D49,R71,U7,L72"
-                              "U62,R66,U55,R34,D71,R55,D58,R83"])))
-  (is (= 410 (best-something ["R98,U47,R26,D63,R33,U87,L62,D20,R33,U53,R51
+  (is (= 30 (fewest-combined-steps-to-intersection ["R8,U5,L5,D3"
+                                                    "U7,R6,D4,L4"])))
+  (is (= 610 (fewest-combined-steps-to-intersection ["R75,D30,R83,U83,L12,D49,R71,U7,L72"
+                                                     "U62,R66,U55,R34,D71,R55,D58,R83"])))
+  (is (= 410 (fewest-combined-steps-to-intersection ["R98,U47,R26,D63,R33,U87,L62,D20,R33,U53,R51
 "
-                              "U98,R91,D20,R16,D67,R40,U7,R15,U6,R7"]))))
+                                                     "U98,R91,D20,R16,D67,R40,U7,R15,U6,R7"]))))

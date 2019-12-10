@@ -69,14 +69,20 @@
 
 (defn exp-int
   [base pow]
-  (cond (zero? pow)
-        1
+  (loop [acc base
+         pow pow]
+    (cond (zero? pow)
+          1
 
-        (= 1 pow)
-        base
+          (= 1 pow)
+          acc
 
-        :else
-        (recur (* base base) (dec pow))))
+          :else
+          (recur (*' acc base) (dec pow)))))
+
+(deftest exp-int-test
+  (is (= 4 (exp-int 2 2)))
+  (is (= 100000 (exp-int 10 5))))
 
 (defn digit
   [n index]
@@ -97,135 +103,131 @@
   (get memory pointer))
 
 (defn read-value
-  [{memory :ram {:keys [pointer relative-base]} :registers :as context} offset mode]
-  (case mode
-    :positional (value memory (value memory (+ pointer offset)))
-    :immediate  (value memory (+ pointer offset))
-    :relative   (value memory (+ relative-base (+ pointer offset)))))
+  [{memory :ram {:keys [pointer relative-base modes]} :registers :as context} offset]
+  (case (modes (- offset 1))
+    0 (value memory (value memory (+ pointer offset))) ;; positional
+    1 (value memory (+ pointer offset)) ;; immediate
+    2 (value memory (+ relative-base (+ pointer offset))))) ;; relative
 
 (defn store-value
   [{{:keys [pointer]} :registers memory :ram :as context} offset value]
   (assoc-in context [:ram (address memory (+ pointer offset))] value))
 
 (defn run-instruction
-  [{{:keys [pointer]} :registers :as context} f modes]
+  [context f]
   (store-value context 3
-               (f (read-value context 1 (nth modes 0))
-                  (read-value context 2 (nth modes 1)))))
-
-(defn mode
-  ;; flag 0 based
-  [parameters flag]
-  (case (digit parameters flag)
-    0 :positional
-    1 :immediate
-    2 :relative))
+               (f (read-value context 1)
+                  (read-value context 2))))
 
 (defn parse-opcode
   [input]
   (let [opcode (mod input 100)
         parameters (quot input 100)]
-    (case opcode
-      1 [opcode
-         (mode parameters 0)
-         (mode parameters 1)
-         (mode parameters 2)]
-      2 [opcode
-         (mode parameters 0)
-         (mode parameters 1)
-         (mode parameters 2)]
-      3 [opcode
-         (mode parameters 0)]
-      4  [opcode
-          (mode parameters 0)]
-      5  [opcode
-          (mode parameters 0)
-          (mode parameters 1)]
-      6  [opcode
-          (mode parameters 0)
-          (mode parameters 1)]
-      7  [opcode
-          (mode parameters 0)
-          (mode parameters 1)
-          (mode parameters 0)]
-      8  [opcode
-          (mode parameters 0)
-          (mode parameters 1)
-          (mode parameters 2)]
-      99 [opcode])))
+    [opcode
+     [(digit parameters 0)
+      (digit parameters 1)
+      (digit parameters 2)]]))
 
 (deftest test-parse-opcode
-  (is (= [1 :positional :positional :positional]
+  (is (= [1 [0 0 0]]
          (parse-opcode 1)))
-  (is (= [1 :positional :immediate :positional]
+  (is (= [1 [0 1 0]]
          (parse-opcode 1001)))
-  (is (= [1 :positional :immediate :relative]
+  (is (= [1 [0 1 2]]
          (parse-opcode 21001)))
-  (is (= [3 :immediate]
+  (is (= [3 [1 0 0]]
          (parse-opcode 103)))
-  (is (= [4 :positional]
+  (is (= [4 [0 0 0]]
          (parse-opcode 4)))
-  (is (= [4 :immediate]
+  (is (= [4 [1 0 0]]
          (parse-opcode 104)))
-  (is (= [99]
+  (is (= [99 [0 0 0]]
          (parse-opcode 99))))
 
 (defn instruction-counter
   [context offset]
   (update-in context [:registers :pointer] + offset))
 
+(defn set-relative-base
+  [context]
+  (update-in context [:registers :relative-base] + (read-value context 1)))
+
+(defn update-register
+  [context register f & args]
+  (apply update-in context [:registers register] f args))
+
 (defn jump
   [context f]
   (assoc-in context [:registers :pointer] (f context)))
+
+(defn set-instruction
+  [{memory :ram {:keys [pointer]} :registers :as context}]
+  (let [opcode (value memory pointer)
+        [opcode modes] (parse-opcode opcode)
+        out' (update context :registers assoc
+                     :opcode opcode
+                     :modes modes)]
+    (swap! events conj out')
+    out'))
+
+(defn instruction
+  [{memory :ram {:keys [pointer]} :registers}]
+  (value memory pointer))
+
+(defn opcode
+  [context]
+  (get-in context [:registers :opcode]))
 
 (defn run
   [input-chan program]
   (let [output-chan (async/chan)]
     (go-loop [context {:registers {:pointer 0
-                                   :relative-base 0}
+                                   :relative-base 0
+                                   :opcode 0
+                                   :modes [0 0 0]}
                        :ram program}]
-      (let [{memory :ram {:keys [pointer]} :registers} context
-            [opcode & modes] (parse-opcode (nth memory pointer))]
-        ;; TODO should opcode set registers on context?
-        (when @debug?
-          (println (take 20 memory) [opcode modes]))
-        (case opcode
+      (let [context (set-instruction context)]
+        (case (opcode context)
           1 (recur (-> context
-                       (run-instruction + modes)
+                       (run-instruction +')
                        (instruction-counter 4)))
 
           2 (recur (-> context
-                       (run-instruction * modes)
+                       (run-instruction *')
                        (instruction-counter 4)))
 
           3 (recur (-> context
                        (store-value 1 (<! input-chan))
                        (instruction-counter 2)))
 
-          4 (do (>! output-chan (read-value context 1 (nth modes 0)))
+          4 (do (>! output-chan (read-value context 1))
                 (instruction-counter context 2))
 
-          5 (let [test-value (read-value context 1 (nth modes 0))]
+          5 (let [test-value (read-value context 1)]
               (if (not (zero? test-value))
-                (recur (jump context #(read-value % 2 (nth modes 1)))) ;; TODO improve this
+                (recur (jump context #(read-value % 2)))
                 (recur (instruction-counter context 3))))
 
-          6 (let [test-value (read-value context 1 (nth modes 0))]
+          6 (let [test-value (read-value context 1)]
               (if (zero? test-value)
-                (recur (jump context #(read-value % 2 (nth modes 1))))
+                (recur (jump context #(read-value % 2)))
                 (recur (instruction-counter 3))))
 
-          7 (let [test-value1 (read-value context 1 (nth modes 0))
-                  test-value2 (read-value context 2 (nth modes 1))]
+          7 (let [test-value1 (read-value context 1)
+                  test-value2 (read-value context 2)]
               (recur (-> context
                          (store-value 3 (if (< test-value1 test-value2) 1 0))
                          (instruction-counter 4))))
 
-          8 (let [test-value1 (read-value context 1 (nth modes 0))
-                  test-value2 (read-value context 2 (nth modes 1))]
+          8 (let [test-value1 (read-value context 1)
+                  test-value2 (read-value context 2)]
               (recur (-> context
                          (store-value 3 (if (= test-value1 test-value2) 1 0))
                          (instruction-counter 4))))
+
+          9 (recur (-> context
+                       (update-register :relative-base + (read-value context 1))
+                       (update-register :pointer + 2)))
 
           99 (async/close! output-chan))))
     output-chan))
@@ -233,7 +235,7 @@
 (defn read-code
   [code]
   (->> (clojure.string/split code #",")
-       (mapv #(Integer/parseInt %))))
+       (mapv #(Long/parseLong %))))
 
 (defn read-program
   [program]
@@ -288,5 +290,27 @@
             (do (async/put! in 0)
                 (<!! out)))))
 
-(deftest level-1
+(deftest day-7-test-case
   (is (= 422858 (load-and-execute-1 (io/resource "advent-of-code-2019/day07.in")))))
+
+(deftest level-1
+  #_(let [in (async/chan)]
+      (testing "takes no input and produces a copy of itself as output"
+        (is (= 1001 (<!! (eval-intcode in "109,1,204,-1,1001,100,1,100,1008,100,16,101,1006,101,0,99")))))
+
+      (testing "should output a 16-digit number"
+        (is (<= (exp-int 10 15)  (<!! (eval-intcode in "1102,34915192,34915192,7,4,7,99,0")))))
+
+      (testing "should output the large number in the middle"
+        (is (= 1125899906842624 (<!! (eval-intcode in "104,1125899906842624,99")))))
+
+
+      )
+
+  (let [in (async/chan)]
+    (async/put! in 1)
+    (is (= 1 (<!! (run in (read-program (io/resource "advent-of-code-2019/day09.in"))))))))
+
+(clojure.pprint/pprint @events)
+
+(clojure.pprint/pprint (take 30 (read-program (io/resource "advent-of-code-2019/day09.in"))))

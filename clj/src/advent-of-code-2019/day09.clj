@@ -64,6 +64,9 @@
 
 ;; https://adventofcode.com/2019/day/9
 
+(def debug? (atom false))
+(def events (atom []))
+
 (defn exp-int
   [base pow]
   (cond (zero? pow)
@@ -87,25 +90,28 @@
     (is (= 2 (digit 120 1)))
     (is (= 0 (digit 2 1)))))
 
+(def value nth)
+
 (defn address
   [memory pointer]
   (get memory pointer))
 
 (defn read-value
-  [memory pointer mode]
-  (if (= :positional mode)
-    (nth memory (address memory pointer))
-    (nth memory pointer)))
+  [{memory :ram {:keys [pointer relative-base]} :registers :as context} offset mode]
+  (case mode
+    :positional (value memory (value memory (+ pointer offset)))
+    :immediate  (value memory (+ pointer offset))
+    :relative   (value memory (+ relative-base (+ pointer offset)))))
 
 (defn store-value
-  [memory pointer value]
-  (assoc memory (address memory pointer) value))
+  [{{:keys [pointer]} :registers memory :ram :as context} offset value]
+  (assoc-in context [:ram (address memory (+ pointer offset))] value))
 
 (defn run-instruction
-  [f pointer memory modes]
-  (store-value memory (+ pointer 3)
-               (f (read-value memory (+ pointer 1) (nth modes 0))
-                  (read-value memory (+ pointer 2) (nth modes 1)))))
+  [{{:keys [pointer]} :registers :as context} f modes]
+  (store-value context 3
+               (f (read-value context 1 (nth modes 0))
+                  (read-value context 2 (nth modes 1)))))
 
 (defn mode
   ;; flag 0 based
@@ -164,65 +170,65 @@
   (is (= [99]
          (parse-opcode 99))))
 
+(defn instruction-counter
+  [context offset]
+  (update-in context [:registers :pointer] + offset))
+
+(defn jump
+  [context f]
+  (assoc-in context [:registers :pointer] (f context)))
+
 (defn run
-  ([input-chan program]
-   (run input-chan program false))
-  ([input-chan program debug?]
-   (let [output-chan (async/chan)]
-     (go-loop [registers {:pointer 0}
-               memory program]
-       (let [{:keys [pointer]} registers
-             [opcode & modes] (parse-opcode (nth memory pointer))]
-         (when debug?
-           (println (take 20 memory) [opcode modes]))
-         (case opcode
-           1 (recur (update registers :pointer + 4)
-                    (run-instruction + pointer memory modes))
+  [input-chan program]
+  (let [output-chan (async/chan)]
+    (go-loop [context {:registers {:pointer 0
+                                   :relative-base 0}
+                       :ram program}]
+      (let [{memory :ram {:keys [pointer]} :registers} context
+            [opcode & modes] (parse-opcode (nth memory pointer))]
+        ;; TODO should opcode set registers on context?
+        (when @debug?
+          (println (take 20 memory) [opcode modes]))
+        (case opcode
+          1 (recur (-> context
+                       (run-instruction + modes)
+                       (instruction-counter 4)))
 
-           2 (recur (update registers :pointer + 4)
-                    (run-instruction * pointer memory modes))
+          2 (recur (-> context
+                       (run-instruction * modes)
+                       (instruction-counter 4)))
 
-           3 (recur (update registers :pointer + 2)
-                    (store-value memory
-                                 (+ pointer 1)
-                                 (<! input-chan)))
+          3 (recur (-> context
+                       (store-value 1 (<! input-chan))
+                       (instruction-counter 2)))
 
-           4 (do (>! output-chan (read-value memory (+ pointer 1) (nth modes 0)))
-                 (recur (update registers :pointer + 2)
-                        memory))
+          4 (do (>! output-chan (read-value context 1 (nth modes 0)))
+                (instruction-counter context 2))
 
-           5 (let [test-value (read-value memory (+ pointer 1) (nth modes 0))]
-               (if (not (zero? test-value))
-                 (recur (update registers :pointer (fn [pointer]
-                                                     (read-value memory (+ pointer 2) (nth modes 1))))
-                        memory)
-                 (recur (update registers :pointer + 3)
-                        memory)))
+          5 (let [test-value (read-value context 1 (nth modes 0))]
+              (if (not (zero? test-value))
+                (recur (jump context #(read-value % 2 (nth modes 1)))) ;; TODO improve this
+                (recur (instruction-counter context 3))))
 
-           6 (let [test-value (read-value memory (+ pointer 1) (nth modes 0))]
-               (if (zero? test-value)
-                 (recur (update registers :pointer (fn [pointer]
-                                                     (read-value memory (+ pointer 2) (nth modes 1))))
-                        memory)
-                 (recur (update registers :pointer + 3)
-                        memory)))
+          6 (let [test-value (read-value context 1 (nth modes 0))]
+              (if (zero? test-value)
+                (recur (jump context #(read-value % 2 (nth modes 1))))
+                (recur (instruction-counter 3))))
 
-           7 (let [test-value1 (read-value memory (+ pointer 1) (nth modes 0))
-                   test-value2 (read-value memory (+ pointer 2) (nth modes 1))]
-               (recur (update registers :pointer + 4)
-                      (store-value memory
-                                   (+ pointer 3)
-                                   (if (< test-value1 test-value2) 1 0))))
+          7 (let [test-value1 (read-value context 1 (nth modes 0))
+                  test-value2 (read-value context 2 (nth modes 1))]
+              (recur (-> context
+                         (store-value 3 (if (< test-value1 test-value2) 1 0))
+                         (instruction-counter 4))))
 
-           8 (let [test-value1 (read-value memory (+ pointer 1) (nth modes 0))
-                   test-value2 (read-value memory (+ pointer 2) (nth modes 1))]
-               (recur (update registers :pointer + 4)
-                      (store-value memory
-                                   (+ pointer 3)
-                                   (if (= test-value1 test-value2) 1 0))))
+          8 (let [test-value1 (read-value context 1 (nth modes 0))
+                  test-value2 (read-value context 2 (nth modes 1))]
+              (recur (-> context
+                         (store-value 3 (if (= test-value1 test-value2) 1 0))
+                         (instruction-counter 4))))
 
-           99 (async/close! output-chan))))
-     output-chan)))
+          99 (async/close! output-chan))))
+    output-chan))
 
 (defn read-code
   [code]

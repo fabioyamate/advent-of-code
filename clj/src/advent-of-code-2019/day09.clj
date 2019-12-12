@@ -100,11 +100,10 @@
 
 (defn address
   [{memory :ram {:keys [pointer relative-base modes]} :registers :as context} offset]
-  (doto (case (modes (- offset 1))
-          0 (value memory (+ pointer offset))
-          1 (+ pointer offset)
-          2 (+ relative-base (value memory (+ pointer offset))))
-    (->> (println "address:" (modes (- offset 1)) ":"))))
+  (case (modes (- offset 1))
+    0 (value memory (+ pointer offset))
+    1 (+ pointer offset)
+    2 (+ relative-base (value memory (+ pointer offset)))))
 
 (defn read-value
   [{memory :ram :as context} offset]
@@ -155,7 +154,6 @@
 
 (defn jump
   [context f]
-  (println "jumping to " (f context))
   (assoc-in context [:registers :pointer] (f context)))
 
 (defn set-instruction
@@ -165,7 +163,6 @@
         out (update context :registers assoc
                     :opcode opcode
                     :modes modes)]
-    (println "registers:" (:registers out))
     (swap! events conj out)
     out))
 
@@ -194,7 +191,7 @@
                                    :modes [0 0 0]}
                        :ram (zero-filling (* 16 1024) program)}]
       (let [context (set-instruction context)]
-        (case (doto (opcode context) (->> (println "opcode:")))
+        (case (opcode context)
           1 (recur (-> context
                        (run-instruction +')
                        (update-register :pointer + 4)))
@@ -204,13 +201,11 @@
                        (update-register :pointer + 4)))
 
           3 (let [v (<! input-chan)]
-              (println "input:" v)
               (recur (-> context
                          (store-value 1 v)
                          (update-register :pointer + 2))))
 
           4 (let [v (read-value context 1)]
-              (println "output:" v)
               (>! output-chan v)
               (recur (update-register context :pointer + 2)))
 
@@ -334,7 +329,19 @@
       (is (= [1001] (run-example code 9))))))
 
 (deftest relative-test
-  (is (is (= 678 (run-example "3,1985,109,2000,109,19,204,-34,99" 678)))))
+  (is (is (= 678 (run-example "3,1985,109,2000,109,19,204,-34,99" 678))))
+
+  (let [in (async/chan)]
+    (testing "takes no input and produces a copy of itself as output"
+      (let [code "109,1,204,-1,1001,100,1,100,1008,100,16,101,1006,101,0,99"]
+        (is (= (read-code code)
+               (<!! (async/reduce conj [] (eval-intcode in code)))))))
+
+    (testing "should output a 16-digit number"
+      (is (<= (exp-int 10 15)  (<!! (eval-intcode in "1102,34915192,34915192,7,4,7,99,0")))))
+
+    (testing "should output the large number in the middle"
+      (is (= 1125899906842624 (<!! (eval-intcode in "104,1125899906842624,99")))))))
 
 (deftest run-channel-test
   (let [program "3,15,3,16,1002,16,10,16,1,16,15,15,4,15,99,0,0"]
@@ -378,25 +385,10 @@
 
 (deftest level-1
   (let [in (async/chan)]
-    (testing "takes no input and produces a copy of itself as output"
-      (let [code "109,1,204,-1,1001,100,1,100,1008,100,16,101,1006,101,0,99"]
-        (is (= (read-code code)
-               (<!! (async/reduce conj [] (eval-intcode in code)))))))
-
-    (testing "should output a 16-digit number"
-      (is (<= (exp-int 10 15)  (<!! (eval-intcode in "1102,34915192,34915192,7,4,7,99,0")))))
-
-    (testing "should output the large number in the middle"
-      (is (= 1125899906842624 (<!! (eval-intcode in "104,1125899906842624,99")))))))
-
-(deftest foo-test
-  (let [in (async/chan)]
     (async/put! in 1)
     (is (= [3241900951] (<!! (async/reduce conj [] (run in (read-program (io/resource "advent-of-code-2019/day09.in")))))))))
 
-#_(deftest level-1
-    (let [in (async/chan)]
-      (testing "takes no input and produces a copy of itself as output"
-        (let [code "109,1,204,-1,1001,100,1,100,1008,100,16,101,1006,101,0,99"]
-          (is (= (read-code code)
-                 (<!! (async/reduce conj [] (eval-intcode in code)))))))))
+(deftest level-2
+  (let [in (async/chan)]
+    (async/put! in 2)
+    (is (= [83089] (<!! (async/reduce conj [] (run in (read-program (io/resource "advent-of-code-2019/day09.in")))))))))

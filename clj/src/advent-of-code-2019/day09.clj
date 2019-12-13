@@ -163,6 +163,7 @@
         out (update context :registers assoc
                     :opcode opcode
                     :modes modes)]
+    (println (:registers out))
     (swap! events conj out)
     out))
 
@@ -235,7 +236,7 @@
                        (update-register :relative-base + (read-value context 1))
                        (update-register :pointer + 2)))
 
-          99 (async/close! output-chan))))
+          99 (do (println "99") (async/close! output-chan)))))
     output-chan))
 
 (defn read-code

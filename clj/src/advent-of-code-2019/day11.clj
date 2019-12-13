@@ -2,12 +2,14 @@
   (:use clojure.test)
   (:require [clojure.java.io :as io]
             [clojure.set :as set]
-            [advent-of-code-2019.day09 :as intcode]))
+            [advent-of-code-2019.day09 :as intcode]
+            [clojure.core.async :as async :refer [<!!]]))
 
 (def state
   {:vector [0 1]
    :position [0 0]
-   :path []})
+   :path []
+   :grid {}})
 
 (defn color-paint
   [color]
@@ -31,15 +33,34 @@
     (-> (assoc state
                :position new-position
                :vector new-vector)
+        (update :grid assoc position color)
         (update :path conj {:color color
                             :position position}))))
 
 (deftest move-test
   (is (= {:vector [-1 0]
           :position [-1 0]
-          :path [{:color ".", :position [0 0]}]}
+          :path [{:color ".", :position [0 0]}]
+          :grid {[0 0] "."}}
          (move state 0 0)))
   (is (= {:vector [1 0]
           :position [1 0]
-          :path [{:color ".", :position [0 0]}]}
+          :path [{:color ".", :position [0 0]}]
+          :grid {[0 0] "."}}
          (move state 0 1))))
+
+(deftest level-1
+  (is (= 1 (let [in (async/chan)
+                 out (intcode/run in (intcode/read-program (io/resource "advent-of-code-2019/day09.in")))]
+             (loop [state {:vector [0 1]
+                           :position [0 0]
+                           :path []
+                           :grid {}}]
+               (let [new-value (get (:grid state) (:position state) 0)]
+                 (println new-value)
+                 (async/put! in new-value)
+                 (if-some [color (<!! out)]
+                   (let [direction (<!! out)]
+                     (println "move" [color direction])
+                     (recur (move state color direction)))
+                   state)))))))

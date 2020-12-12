@@ -66,30 +66,40 @@ dotted black bags contain no other bags.")
   (is (= 4 (solve-1 sample "shiny gold")))
   (is (= 151 (solve-1 (slurp (io/resource "advent-of-code-2020/day07.in")) "shiny gold"))))
 
+;; i'm just brute forcing the solution to compute the result... not thinking too much.
+;; the strategy here is different from the first part. Here we are going to start from a
+;; given node and traverse its inner bags.
+
 (defn parse-bag
+  "return [bag-name {inner-bag-1 count inner-bag-2 count ...}]"
   [line]
   (let [[_ parent children] (re-find parent-re line)]
     (when parent
       [parent (into {}
                     (for [child (str/split children #",")
-                          :let [[_ c bag] (re-find child-re child)]]
+                          :let [[_ c bag] (re-find child-re child)]
+                          :when bag]
                       [bag c]))])))
 
 (defn build-table-2
+  "return a table with each bag and its inner bags"
   [data]
   (into {} (map parse-bag (str/split-lines data))))
 
+;; the simple computing here is a recursive solution where:
+;; count(bag) = (count inner-bag) + sum(count inner-inner-bag))
 (defn count-bags
-  [table foo]
+  [table inner-bags]
   (apply +
-         (for [[bag c] foo]
-           (* (Integer/parseInt c) (count-bags table (get table bag))))))
+         (for [[bag c] inner-bags
+               :let [down-count (count-bags table (get table bag))]]
+           (* (Integer/parseInt c) (+ 1 down-count)))))
 
 (defn solve-2
   [data bag]
   (let [table (build-table-2 data)]
-    table
-    #_(count-bags table (get table bag))))
+    (count-bags table (get table bag))))
 
-(solve-2 (slurp (io/resource "advent-of-code-2020/day07.in")) "shiny gold")
-(clojure.pprint/pprint (solve-2 sample "shiny gold"))
+(deftest solve-2-test
+  (is (= 41559 (solve-2 (slurp (io/resource "advent-of-code-2020/day07.in")) "shiny gold")))
+  (is (= 32 (solve-2 sample "shiny gold"))))

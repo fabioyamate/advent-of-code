@@ -1,6 +1,7 @@
 {:deps
  {org.clojure/clojure {:mvn/version "1.10.1"}
   org.clojure/test.check {:mvn/version "0.9.0"}
-  org.clojure/core.async {:mvn/version "0.6.532"}}
+  org.clojure/core.async {:mvn/version "0.6.532"}
+  com.stuartsierra/dependency {:mvn/version "1.0.0"}}
 
  :paths ["resources"]}
